@@ -80,7 +80,6 @@ class CompileTab {
   runCompiler () {
     try {
       this.fileManager.saveCurrentFile()
-      this.editor.clearAnnotations()
       var currentFile = this.config.get('currentFile')
       return this.compileFile(currentFile)
     } catch (err) {
