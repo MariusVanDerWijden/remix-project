@@ -74,7 +74,7 @@ class Editor extends Plugin {
     // Init
     this.event = new EventManager()
     this.sessions = {}
-    this.sourceAnnotations = []
+    this.sourceAnnotationsPerFile = []
     this.readOnlySessions = {}
     this.previousInput = ''
     this.saveTimeout = null
@@ -204,7 +204,10 @@ class Editor extends Plugin {
 
   onActivation () {
     this.on('sidePanel', 'focusChanged', (name) => this.sourceHighlighters.hideHighlightsExcept(name))
-    this.on('sidePanel', 'pluginDisabled', (name) => this.sourceHighlighters.discardHighlight(name))
+    this.on('sidePanel', 'pluginDisabled', (name) => {
+      this.sourceHighlighters.discardHighlight(name)
+      this.clearAllAnnotationsFor(name)
+    })
   }
 
   onDeactivation () {
@@ -499,31 +502,84 @@ class Editor extends Plugin {
   }
 
   /**
-   * Clears all the annotations for the current session.
+   * Clears all the annotations for the given @arg filePath and @arg plugin, if none is given, the current sesssion is used.
+   * An annotation has the following shape:
+      column: -1
+      row: -1
+      text: "browser/Untitled1.sol: Warning: SPDX license identifier not provided in source file. Before publishing, consider adding a comment containing "SPDX-License-Identifier: <SPDX-License>" to each source file. Use "SPDX-License-Identifier: UNLICENSED" for non-open-source code. Please see https://spdx.org for more information.↵"
+      type: "warning"
+   * @param {String} filePath
+   * @param {String} plugin
    */
-  clearAnnotations () {
-    this.sourceAnnotations = []
-    this.editor.getSession().clearAnnotations()
+  clearAnnotationsByPlugin (filePath, plugin) {
+    if (filePath && !this.sessions[filePath]) throw new Error('file not found' + filePath)
+    const session = this.sessions[filePath] || this.editor.getSession()
+    let path = filePath || this.currentSession
+
+    const currentAnnotations = this.sourceAnnotationsPerFile[path]
+    if (!currentAnnotations) return
+
+    let newAnnotations = []
+    for (let annotation of currentAnnotations) {
+      if (annotation.from !== plugin) newAnnotations.push(annotation)
+    }
+    this.sourceAnnotationsPerFile[path] = newAnnotations
+    
+    session.setAnnotations(this.sourceAnnotationsPerFile[path])
+  }
+
+  /**
+   * Clears all the annotations for the given @arg filePath, the plugin name is retrieved from the context, if none is given, the current sesssion is used.
+   * An annotation has the following shape:
+      column: -1
+      row: -1
+      text: "browser/Untitled1.sol: Warning: SPDX license identifier not provided in source file. Before publishing, consider adding a comment containing "SPDX-License-Identifier: <SPDX-License>" to each source file. Use "SPDX-License-Identifier: UNLICENSED" for non-open-source code. Please see https://spdx.org for more information.↵"
+      type: "warning"
+   * @param {String} filePath
+   * @param {String} plugin
+   */
+  clearAnnotations (filePath) {
+    const { from } = this.currentRequest
+    this.clearAnnotationsByPlugin(filePath, from)
+  }
+
+  /**
+   * Clears all the annotations and for all the sessions for the given @arg plugin
+   * An annotation has the following shape:
+      column: -1
+      row: -1
+      text: "browser/Untitled1.sol: Warning: SPDX license identifier not provided in source file. Before publishing, consider adding a comment containing "SPDX-License-Identifier: <SPDX-License>" to each source file. Use "SPDX-License-Identifier: UNLICENSED" for non-open-source code. Please see https://spdx.org for more information.↵"
+      type: "warning"
+   * @param {String} filePath
+   */
+  clearAllAnnotationsFor (plugin) {
+    for (let session in this.sessions) {
+      this.clearAnnotationsByPlugin(session, plugin)
+    }
   }
 
   /**
    * Add an annotation to the current session.
+   * An annotation has the following shape:
+      column: -1
+      row: -1
+      text: "browser/Untitled1.sol: Warning: SPDX license identifier not provided in source file. Before publishing, consider adding a comment containing "SPDX-License-Identifier: <SPDX-License>" to each source file. Use "SPDX-License-Identifier: UNLICENSED" for non-open-source code. Please see https://spdx.org for more information.↵"
+      type: "warning"
    * @param {Object} annotation
+   * @param {String} filePath
    */
-  addAnnotation (annotation) {
-    this.sourceAnnotations[this.sourceAnnotations.length] = annotation
-    this.setAnnotations(this.sourceAnnotations)
+  addAnnotation (annotation, filePath) {
+    if (!this.sessions[filePath]) throw new Error('file not found' + filePath)
+  
+    const { from } = this.currentRequest
+    if (!this.sourceAnnotationsPerFile[filePath]) this.sourceAnnotationsPerFile[filePath] = []
+    annotation.from = from
+    this.sourceAnnotationsPerFile[filePath].push(annotation)
+
+    this.sessions[filePath].setAnnotations(this.sourceAnnotationsPerFile[filePath])
   }
 
-  /**
-   * Set a list of annotations to the current session.
-   * @param {Array<Object>} annotation
-   */
-  setAnnotations (sourceAnnotations) {
-    this.editor.getSession().setAnnotations(sourceAnnotations)
-  }
-
-  /**
+ /**
    * Moves the cursor and focus to the specified line and column number
    * @param {number} line
    * @param {number} col
